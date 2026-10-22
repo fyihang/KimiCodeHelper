@@ -141,20 +141,61 @@ final class Controller: ObservableObject {
         autostart = FileManager.default.fileExists(atPath: kLaunchAgentsPlist)
     }
 
+    private func waitUntilGone() -> Bool {
+        for _ in 0..<25 {
+            if run("/bin/launchctl", ["print", target]).code != 0 { return true }
+            usleep(200_000)
+        }
+        return false
+    }
+
+    /// Bootstrap from the config plist; returns an error message on failure, nil on success.
+    private func bootstrapService() -> String? {
+        let r = run("/bin/launchctl", ["bootstrap", domain, kConfigPlist])
+        guard r.code != 0, !r.out.contains("already loaded") else { return nil }
+        let detail = r.out.trimmingCharacters(in: .whitespacesAndNewlines)
+        return detail.isEmpty ? "launchctl bootstrap 退出码 \(r.code)" : detail
+    }
+
     func start() {
         if state == .loaded {
             run("/bin/launchctl", ["kickstart", target])
-        } else {
-            run("/bin/launchctl", ["bootstrap", domain, kConfigPlist])
-            run("/bin/launchctl", ["kickstart", target])
+            message = nil
+            refresh()
+            return
         }
+        // 清除可能存在的半销毁状态，等旧服务彻底卸载后再 bootstrap
+        run("/bin/launchctl", ["bootout", target])
+        guard waitUntilGone() else {
+            message = "启动失败：旧服务未能退出，请稍后重试"
+            refresh()
+            return
+        }
+        if let err = bootstrapService() {
+            message = "启动失败：\(err)"
+            refresh()
+            return
+        }
+        run("/bin/launchctl", ["kickstart", target])
+        message = nil
         refresh()
     }
 
     func restart() {
         run("/bin/launchctl", ["bootout", target])
-        run("/bin/launchctl", ["bootstrap", domain, kConfigPlist])
+        // bootout 是异步的，必须等旧服务真正卸载，否则紧接着的 bootstrap 会失败
+        guard waitUntilGone() else {
+            message = "重启失败：旧服务未能停止，请稍后重试"
+            refresh()
+            return
+        }
+        if let err = bootstrapService() {
+            message = "重启失败：\(err)"
+            refresh()
+            return
+        }
         run("/bin/launchctl", ["kickstart", target])
+        message = nil
         refresh()
     }
 
