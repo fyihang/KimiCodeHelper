@@ -129,9 +129,11 @@ stop_service() {
 	for ((attempt = 0; attempt < 30; attempt++)); do
 		alive=0
 		if session_exists; then alive=1; fi
-		for group in \"${groups[@]}\"; do
-			if kill -0 -- \"-$group\" 2>/dev/null; then alive=1; fi
-		done
+		if ((${#groups[@]} > 0)); then
+			for group in \"${groups[@]}\"; do
+				if kill -0 -- \"-$group\" 2>/dev/null; then alive=1; fi
+			done
+		fi
 		if ((alive == 0)); then return 0; fi
 		/bin/sleep 0.1
 	done
