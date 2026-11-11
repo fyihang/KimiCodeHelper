@@ -23,6 +23,33 @@ Terminal 的完全磁盘访问权限因此可以传递给服务，避免直接�
 
 本项目不会修改 TCC 数据库，也不会绕过 SIP。
 
+## 图形控制台
+
+控制台只显示状态、读取日志并通过 Terminal 发起服务动作；它不是服务宿主，也不会在打开时自动启动服务。启动、停止、重启、接回和更新都在 Terminal 中执行，因此沿用 Terminal 的完全磁盘访问权限。**不要给 Kimi Web App 开放完全磁盘访问权限**；首次操作时，按 macOS 提示允许 App 控制 Terminal 即可。关闭控制台窗口会退出 App，但不会停止服务，也不会取消 Terminal 中已经开始的任务。
+
+构建并安装到「应用程序」：
+
+```bash
+./Scripts/build.sh
+/usr/bin/ditto "dist/Kimi Web.app" "/Applications/Kimi Web.app"
+open -a "/Applications/Kimi Web.app"
+```
+
+构建需要 macOS 自带的 Swift 工具链，不使用第三方依赖。产物为 `dist/Kimi Web.app`，bundle identifier 为 `com.kimi.web.console`；管理脚本和 Terminal 动作层均包含在 App 内，不依赖 iCloud 项目路径。重新安装只会替换控制台 App，不修改登录 LaunchAgent 或现有服务配置。
+
+控制台显示 screen、服务 PID、Kimi 版本和 Web 可达性，并提供启动、重启、停止、打开 Web、接回 Terminal 和更新按钮。打开 Web 使用 `http://127.0.0.1:58627/`；接回后按 `Control-A`，再按 `D` 脱离。
+
+### 更新、日志与恢复
+
+点击「更新 Kimi Code」并确认后，Terminal 会执行 `~/.kimi-code/bin/kimi update -y`。若服务原本正在运行，会先停止服务，**更新期间 Web 会暂时中断**。更新成功后无论原状态如何都会自动启动服务，并在最多 30 秒内同时确认 screen 会话和 HTTP 就绪。更新失败时，仅在服务原本运行的情况下尝试启动当前残留的二进制；这只是服务恢复尝试，**不保证二进制回滚**。
+
+动作状态和输出保存在：
+
+- `~/Library/Logs/KimiWeb/task.state`
+- `~/Library/Logs/KimiWeb/console.log`
+
+同一时间只允许一个控制台动作或更新任务。重新打开 App 会读取持久状态并继续显示，不会重复执行已开始的任务。成功的 Terminal 动作窗口会按本次新建窗口的身份关闭；失败窗口会保留供诊断，更新成功但服务恢复失败也会明确报错并保留窗口。控制台不自动检查更新、不更新自身，也不提供版本回滚。
+
 ## 安装与迁移
 
 在本机 Terminal 中运行：
