@@ -18,11 +18,19 @@ end if
 if environmentValue("KIMI_WEB_CONFIG") is not "" then
 	set startCommand to startCommand & "export KIMI_WEB_CONFIG=" & quoted form of environmentValue("KIMI_WEB_CONFIG") & "; "
 end if
-set startCommand to startCommand & quoted form of managerPath & " start; exit_code=$?; if [ \"$exit_code\" -ne 0 ]; then echo \"Kimi Web startup failed; leaving this window open for diagnostics.\"; exec /bin/bash; fi"
+set startCommand to startCommand & quoted form of managerPath & " start; exit_code=$?; if [ \"$exit_code\" -ne 0 ]; then echo \"Kimi Web startup failed; leaving this window open for diagnostics.\"; else echo \"Waiting for Kimi Web session confirmation...\"; fi; exec /bin/bash"
 
 tell application "Terminal"
-	do script startCommand
-	set newWindowID to id of front window
+	set newTab to do script startCommand
+	set newTTY to tty of newTab
+	set newWindowID to missing value
+	repeat with windowIndex from 1 to count windows
+		set candidateWindow to window windowIndex
+		try
+			if tty of selected tab of candidateWindow is newTTY then set newWindowID to id of candidateWindow
+		end try
+	end repeat
+	if newWindowID is missing value then error "Could not identify the Terminal window created for Kimi Web."
 	set sessionStarted to false
 	repeat 60 times
 		try
@@ -32,5 +40,10 @@ tell application "Terminal"
 		end try
 		delay 0.5
 	end repeat
-	if sessionStarted then close window id newWindowID
+	if sessionStarted then
+		close window id newWindowID
+	else
+		do script "echo Kimi Web startup timed out; leaving this window open for diagnostics." in newTab
+		error "Kimi Web screen session did not start within 30 seconds."
+	end if
 end tell

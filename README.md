@@ -35,10 +35,10 @@ cd /path/to/KimiCodeHelper
 安装器会要求确认 Terminal 已获得完全磁盘访问权限，并检查所需脚本和配置。确认后，它会：
 
 1. 生成并校验 `~/Library/LaunchAgents/com.kimi.web.terminal.plist`。
-2. 卸载旧 `com.kimi.web` 服务并删除旧 `~/Library/LaunchAgents/com.kimi.web.plist`，避免双实例。
-3. 加载 label 为 `com.kimi.web.terminal` 的新 LaunchAgent；`RunAtLoad` 会立即调用一次 Terminal 启动器，之后也在每次登录时启动。
+2. 暂时卸载旧 `com.kimi.web` 服务，加载 label 为 `com.kimi.web.terminal` 的新 LaunchAgent；`RunAtLoad` 会立即调用一次 Terminal 启动器，之后也在每次登录时启动。
+3. 确认 `kimi-web` screen 会话实际运行后，才删除旧 `~/Library/LaunchAgents/com.kimi.web.plist`，避免登录时双实例。
 
-安装会中断旧服务，请在不需要保持现有远程会话时执行。
+如果启动器失败或确认超时，安装器会返回非零状态，卸载并删除新 LaunchAgent，并从保留的旧 plist 恢复旧服务；旧自启配置只会在确认成功后删除。安装会暂时中断旧服务，请在不需要保持现有远程会话时执行。
 
 ## 日常管理
 
