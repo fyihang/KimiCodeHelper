@@ -213,6 +213,7 @@ final class ConsoleController: ObservableObject {
     @Published private(set) var logText = ""
     @Published private(set) var errorMessage: String?
     @Published private(set) var isRefreshing = false
+    @Published private(set) var isInitialTaskRestorePending = true
     @Published var confirmingUpdate = false
 
     let configuration: ConsoleConfiguration
@@ -225,7 +226,7 @@ final class ConsoleController: ObservableObject {
     private var refreshTimer: Timer?
 
     var isBusy: Bool {
-        activeAction != nil || persistentTask?.status == .running
+        isInitialTaskRestorePending || activeAction != nil || persistentTask?.status == .running
     }
 
     init(
@@ -319,6 +320,7 @@ final class ConsoleController: ObservableObject {
             Task { @MainActor in
                 guard generation == self.taskReadGeneration else { return }
                 self.persistentTask = task
+                self.isInitialTaskRestorePending = false
             }
         }
     }

@@ -58,6 +58,7 @@ struct ContentView: View {
                 Button("重启") { controller.perform(.restart) }
                 Button("停止", role: .destructive) { controller.perform(.stop) }
             }
+            .disabled(controller.isBusy)
             HStack(spacing: 8) {
                 Button("打开 Web") { controller.openWeb() }
                 Button("接回 Terminal") { controller.perform(.attach) }
