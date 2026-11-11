@@ -1,71 +1,90 @@
 # KimiCodeHelper
 
-一个 macOS 小工具：用 SwiftUI 控制台管理后台运行的 [Kimi Code](https://www.kimi.com/code) Web 服务——启动 / 重启 / 停止、开机自启勾选、启动参数可配置，全程无终端窗口。
-
-A tiny macOS control panel for running `kimi web` as a background service: start / restart / stop, optional login autostart, and editable launch arguments — no terminal window left sitting on your desktop.
-
-## 为什么会有这个项目
-
-我把 Kimi Code 部署在家里的一台 Mac 上，想在外出时通过 **Cloudflare Tunnel** 远程访问它的 Web 界面。但有两个痛点：
-
-1. **不美观**：`kimi web` 只能前台运行并驻留在终端里，桌面一直摆着一个终端窗口。
-2. **鉴权不健全**：Kimi Code 处于 RC 阶段，鉴权机制还不够完善。开启远程访问需要 `--dangerous-bypass-auth` 关掉服务本身的鉴权，再把鉴权交给隧道层（如 Cloudflare Access）——这意味着服务必须稳定地跑在后台，而不是挂在某个终端会话里。
-
-于是写了这个 App：它把 `kimi web` 托管给 macOS 的 launchd 在后台运行，自己只做一个启停控制台。
-
-## 功能
-
-- **状态栏**：每秒刷新，显示 运行中 / 已停止、PID、已运行时长、端口、远程地址
-- **三个按钮**：启动、重启、停止（按状态自动启用 / 禁用）
-- **开机自启**：勾选框控制，勾上即写入 `~/Library/LaunchAgents`，下次登录自动启动
-- **启动参数可配置**：例如 `web --dangerous-bypass-auth --allowed-host your-domain.example.com`，保存后重启生效
-- **崩溃自动恢复**：服务通过 launchd 托管（`KeepAlive`），异常退出会被自动拉起
-- 关闭控制台窗口即退出 App，不影响后台服务
-
-## 环境要求与构建
-
-- macOS 13+
-- 已安装 [Kimi Code CLI](https://www.kimi.com/code/docs/en/)（`kimi` 命令可用）
-- 系统自带 Swift 工具链（Xcode Command Line Tools）
-
-```bash
-git clone https://github.com/fyihang/KimiCodeHelper.git
-cd KimiCodeHelper
-./Scripts/build.sh
-```
-
-构建产物为 `dist/Kimi Web.app`，拖进「应用程序」即可使用。
-App 内的 `Contents/Resources/` 附有源码和 `build.sh`，改完界面可原地重新编译。
-
-> 图标未包含在仓库中（版权归 Moonshot AI 所有）。如需 Kimi 风格图标，可自行放置 `icon.icns` 到 `app-template/` 后重新构建。
-
-## 使用说明
-
-| 项目 | 位置 |
-| --- | --- |
-| 服务配置 / 启动参数 | `~/Library/Application Support/KimiWeb/com.kimi.web.plist` |
-| 开机自启 | `~/Library/LaunchAgents/com.kimi.web.plist`（勾选框即创建 / 删除此文件） |
-| 服务日志 | `~/.kimi-code/logs/web-launchd.log` |
-| launchd Label | `com.kimi.web` |
-
-默认启动参数：`web --dangerous-bypass-auth --allowed-host your-domain.example.com`
-（首次启动时自动初始化，请改成你自己的隧道域名。）
+用 macOS Terminal 和 detached `screen` 会话运行 [Kimi Code](https://www.kimi.com/code) Web 服务。服务在后台持续运行，不保留终端窗口，支持登录后自动启动，并可随时接回会话查看输出。
 
 ## 工作原理
 
-- **启动**：`launchctl bootstrap gui/$UID <plist>` + `kickstart`（未加载时）；已加载则直接 `kickstart`
-- **重启**：`bootout` → `bootstrap` → `kickstart`，确保新参数被加载
-- **停止**：`bootout`——直接把服务从 launchd 移除，因此不会被 `KeepAlive` 立刻复活（这是它能"停得住"的关键）
-- **开机自启**：勾选 = 把 plist 拷进 `~/Library/LaunchAgents`；取消 = 删除。launchd 在登录时自动加载该目录下的 plist（`RunAtLoad`）
-- 控制台本身每秒执行 `launchctl print` + `ps` 轮询状态
+`Scripts/kimi-web.sh` 从现有配置读取 `ProgramArguments`，在名为 `kimi-web` 的 `screen` 会话中运行服务；异常退出时等待 5 秒后重试。登录 LaunchAgent 调用 `Scripts/login-bootstrap.applescript`，由 Terminal 创建会话，成功后仅关闭本次新建的窗口。
+
+Terminal 的完全磁盘访问权限因此可以传递给服务，避免直接由 launchd 启动时访问 iCloud 目录出现权限错误。
+
+## 环境要求
+
+- macOS 13 或更高版本
+- 已安装 [Kimi Code CLI](https://www.kimi.com/code/docs/en/)
+- 系统自带的 Terminal、`/usr/bin/screen` 和 `/usr/bin/osascript`
+- 已有服务配置：`~/Library/Application Support/KimiWeb/com.kimi.web.plist`，其中包含 Kimi Web 的 `ProgramArguments`
+
+## 授权 Terminal
+
+1. 打开「系统设置 → 隐私与安全性 → 完全磁盘访问权限」。
+2. 为 Terminal 开启权限，并按系统提示完成授权所需的 Terminal 重启。
+3. 安装并启动服务后，让 Terminal 保持在后台运行，**不要完全退出 Terminal**；正常运行不需要保留 Terminal 窗口。
+
+本项目不会修改 TCC 数据库，也不会绕过 SIP。
+
+## 安装与迁移
+
+在本机 Terminal 中运行：
+
+```bash
+cd /path/to/KimiCodeHelper
+./Scripts/install.sh
+```
+
+安装器会要求确认 Terminal 已获得完全磁盘访问权限，并检查所需脚本和配置。确认后，它会：
+
+1. 生成并校验 `~/Library/LaunchAgents/com.kimi.web.terminal.plist`。
+2. 卸载旧 `com.kimi.web` 服务并删除旧 `~/Library/LaunchAgents/com.kimi.web.plist`，避免双实例。
+3. 加载 label 为 `com.kimi.web.terminal` 的新 LaunchAgent；`RunAtLoad` 会立即调用一次 Terminal 启动器，之后也在每次登录时启动。
+
+安装会中断旧服务，请在不需要保持现有远程会话时执行。
+
+## 日常管理
+
+```bash
+./Scripts/kimi-web.sh start
+./Scripts/kimi-web.sh stop
+./Scripts/kimi-web.sh restart
+./Scripts/kimi-web.sh status
+./Scripts/kimi-web.sh attach
+```
+
+| 命令 | 作用 |
+| --- | --- |
+| `start` | 创建 detached `screen` 会话；已运行时不会重复创建 |
+| `stop` | 停止会话及其服务进程，不会被运行循环重新拉起 |
+| `restart` | 停止后重新启动 |
+| `status` | 查询会话是否运行 |
+| `attach` | 接回会话查看实时输出 |
+| `run` | 前台运行服务并在异常退出后重试；通常由 `start` 内部调用 |
+
+接回后按 `Control-A`，再按 `D`，可离开会话而不停止服务。
+
+## 卸载
+
+```bash
+./Scripts/uninstall.sh
+```
+
+卸载只卸载并删除新 `com.kimi.web.terminal` LaunchAgent，然后停止 `kimi-web` 会话。它不会操作旧 `com.kimi.web`，也不会删除 `~/Library/Application Support/KimiWeb/com.kimi.web.plist` 或其他用户配置。
+
+## 配置与自启
+
+- 启动参数：`~/Library/Application Support/KimiWeb/com.kimi.web.plist` 中的 `ProgramArguments`
+- 新 LaunchAgent：`~/Library/LaunchAgents/com.kimi.web.terminal.plist`
+- 新 launchd label：`com.kimi.web.terminal`
+- 默认 screen 会话：`kimi-web`
+
+修改启动参数后运行 `./Scripts/kimi-web.sh restart` 使其生效。自启发生在用户登录后，不是登录前的系统守护进程。
 
 ## ⚠️ 安全提示
 
 `--dangerous-bypass-auth` 会完全关闭 Kimi Code 的鉴权：任何能访问到该端口的人都将获得你机器上的完整会话、文件和 shell 权限。
 
-- **务必**在隧道层加保护：Cloudflare Access（推荐，零信任）、Basic Auth 或 IP 白名单
-- 不建议在不可信网络中直接暴露端口
-- 远程操作结束后可在控制台一键停止服务
+- **务必**在隧道层加保护：Cloudflare Access（推荐，零信任）、Basic Auth 或 IP 白名单。
+- 不建议在不可信网络中直接暴露端口。
+- 远程操作结束后可运行 `./Scripts/kimi-web.sh stop` 停止服务。
 
 ## 免责声明
 
