@@ -214,19 +214,27 @@ final class ConsoleController: ObservableObject {
     @Published private(set) var errorMessage: String?
     @Published private(set) var isRefreshing = false
     @Published private(set) var isInitialTaskRestorePending = true
+    @Published private(set) var commandText = ""
+    @Published private(set) var commandDirty = false
+    @Published private(set) var isCommandSaving = false
+    @Published private(set) var commandStatusMessage: String?
     @Published var confirmingUpdate = false
 
     let configuration: ConsoleConfiguration
     private let actionScriptURL: URL?
     private let probe: ConsoleStatusProbe
+    private var commandConfiguration: CommandConfiguration?
     private var activeAction: ConsoleAction?
     private var refreshItemsRemaining = 0
     private var taskReadGeneration = 0
     private var logReadGeneration = 0
+    private var commandLoadGeneration = 0
+    private var commandEditGeneration = 0
+    private var isCommandLoading = false
     private var refreshTimer: Timer?
 
     var isBusy: Bool {
-        isInitialTaskRestorePending || activeAction != nil || persistentTask?.status == .running
+        isInitialTaskRestorePending || isCommandSaving || activeAction != nil || persistentTask?.status == .running
     }
 
     init(
@@ -239,6 +247,7 @@ final class ConsoleController: ObservableObject {
         probe = ConsoleStatusProbe(configuration: configuration)
         reloadPersistentTask()
         reloadLog()
+        reloadCommand(force: true)
         refresh()
         if autoRefresh {
             let timer = Timer(timeInterval: 3, repeats: true) { [weak self] _ in
@@ -250,6 +259,101 @@ final class ConsoleController: ObservableObject {
             }
             RunLoop.main.add(timer, forMode: .common)
             refreshTimer = timer
+        }
+    }
+
+    func updateCommandText(_ text: String) {
+        commandText = text
+        commandDirty = true
+        commandEditGeneration += 1
+        commandStatusMessage = nil
+    }
+
+    func reloadCommand(force: Bool = false) {
+        guard !isCommandSaving, !isCommandLoading, force || !commandDirty else { return }
+        commandLoadGeneration += 1
+        let generation = commandLoadGeneration
+        let editGeneration = commandEditGeneration
+        let fileURL = URL(fileURLWithPath: configuration.configPath)
+        isCommandLoading = true
+        if force {
+            errorMessage = nil
+            commandStatusMessage = nil
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result = Result { try CommandConfiguration.load(from: fileURL) }
+            Task { @MainActor in
+                guard generation == self.commandLoadGeneration else { return }
+                self.isCommandLoading = false
+                switch result {
+                case .success(let loaded):
+                    self.commandConfiguration = loaded
+                    guard editGeneration == self.commandEditGeneration else { return }
+                    do {
+                        self.commandText = try CommandLine.string(from: loaded.programArguments)
+                        self.commandDirty = false
+                    } catch {
+                        self.errorMessage = error.localizedDescription
+                    }
+                case .failure(let error):
+                    self.errorMessage = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    func saveCommand() {
+        saveCommand(restartAfterSave: false)
+    }
+
+    func saveCommandAndRestart() {
+        saveCommand(restartAfterSave: true)
+    }
+
+    private func saveCommand(restartAfterSave: Bool) {
+        guard !isCommandSaving else { return }
+        guard !restartAfterSave || !isBusy else {
+            errorMessage = "另一个控制台任务正在执行；命令尚未保存，不能重启。"
+            return
+        }
+        guard let snapshot = commandConfiguration else {
+            errorMessage = "命令配置尚未载入，无法保存。请重新加载。"
+            return
+        }
+        let draft = commandText
+        let editGeneration = commandEditGeneration
+        commandLoadGeneration += 1
+        isCommandLoading = false
+        isCommandSaving = true
+        errorMessage = nil
+        commandStatusMessage = nil
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result = Result {
+                let arguments = try CommandLine.parse(draft)
+                return try snapshot.saving(programArguments: arguments)
+            }
+            Task { @MainActor in
+                self.isCommandSaving = false
+                switch result {
+                case .success(let saved):
+                    self.commandConfiguration = saved
+                    if editGeneration == self.commandEditGeneration {
+                        self.commandDirty = false
+                    }
+                    if restartAfterSave {
+                        self.commandStatusMessage = "命令已保存，正在重启…"
+                        if self.isBusy {
+                            self.errorMessage = "命令已保存，但另一个控制台任务正在执行，未发起重启。"
+                        } else {
+                            self.perform(.restart)
+                        }
+                    } else {
+                        self.commandStatusMessage = "命令已保存；重启后生效。"
+                    }
+                case .failure(let error):
+                    self.errorMessage = error.localizedDescription
+                }
+            }
         }
     }
 
@@ -288,6 +392,7 @@ final class ConsoleController: ObservableObject {
     func refresh() {
         guard !isRefreshing else { return }
         isRefreshing = true
+        reloadCommand()
         refreshItemsRemaining = 3
         probe.screen { status in
             Task { @MainActor in

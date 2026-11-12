@@ -53,6 +53,48 @@ struct ContentView: View {
             .padding(10)
             .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 8))
 
+            VStack(alignment: .leading, spacing: 7) {
+                HStack {
+                    Text("运行命令")
+                        .font(.headline)
+                    if controller.commandDirty {
+                        Text("未保存")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
+                    Spacer()
+                    if controller.isCommandSaving {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                }
+                TextEditor(text: Binding(
+                    get: { controller.commandText },
+                    set: { controller.updateCommandText($0) }
+                ))
+                .font(.callout.monospaced())
+                .frame(height: 86)
+                .padding(4)
+                .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
+                .disabled(controller.isCommandSaving)
+                Text("仅解析为参数，不经过 shell；程序须为可执行文件的绝对路径。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                HStack(spacing: 8) {
+                    Button("保存") { controller.saveCommand() }
+                        .disabled(!controller.commandDirty || controller.isCommandSaving)
+                    Button("保存并重启") { controller.saveCommandAndRestart() }
+                        .disabled(!controller.commandDirty || controller.isBusy)
+                    Button("重新加载") { controller.reloadCommand(force: true) }
+                        .disabled(controller.isCommandSaving)
+                }
+                if let commandStatusMessage = controller.commandStatusMessage {
+                    Text(commandStatusMessage)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
             HStack(spacing: 8) {
                 Button("启动") { controller.perform(.start) }
                 Button("重启") { controller.perform(.restart) }
