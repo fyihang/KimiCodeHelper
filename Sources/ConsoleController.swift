@@ -341,7 +341,7 @@ final class ConsoleController: ObservableObject {
                         self.commandDirty = false
                     }
                     if restartAfterSave {
-                        self.commandStatusMessage = "命令已保存，正在重启…"
+                        self.commandStatusMessage = "命令已保存，已发起重启。"
                         if self.isBusy {
                             self.errorMessage = "命令已保存，但另一个控制台任务正在执行，未发起重启。"
                         } else {
