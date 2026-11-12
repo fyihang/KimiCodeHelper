@@ -142,7 +142,7 @@ struct ContentView: View {
             .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
         }
         .padding(16)
-        .frame(minWidth: 560, minHeight: 500)
+        .frame(minWidth: 560, minHeight: 680)
         .alert("更新 Kimi Code？", isPresented: $controller.confirmingUpdate) {
             Button("取消", role: .cancel) {}
             Button("更新", role: .destructive) { controller.perform(.update) }
