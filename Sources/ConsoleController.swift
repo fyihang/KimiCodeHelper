@@ -350,11 +350,9 @@ final class ConsoleController: ObservableObject {
         defer { try? handle.close() }
         guard let size = try? handle.seekToEnd() else { return "" }
         let maximumBytes: UInt64 = 256 * 1024
-        if size > maximumBytes {
-            try? handle.seek(toOffset: size - maximumBytes)
-        }
+        try? handle.seek(toOffset: size - min(size, maximumBytes))
         let data = handle.readDataToEndOfFile()
-        var text = String(data: data, encoding: .utf8) ?? ""
+        var text = String(decoding: data, as: UTF8.self)
         if size > maximumBytes, let newline = text.firstIndex(of: "\n") {
             text = String(text[text.index(after: newline)...])
         }
