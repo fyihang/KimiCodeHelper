@@ -1,6 +1,6 @@
 # KimiCodeHelper
 
-用 macOS Terminal 和 detached `screen` 会话运行 [Kimi Code](https://www.kimi.com/code) Web 服务。服务在后台持续运行，不保留终端窗口，支持登录后自动启动，并可随时接回会话查看输出。
+用 macOS Terminal 和 detached `screen` 会话运行 [Kimi Code](https://www.kimi.com/code) Web 服务，并提供带原创图标的 SwiftUI 图形控制台。服务在后台持续运行，不保留终端窗口，支持登录后自动启动、自定义运行命令、在线更新，并可随时接回会话查看输出。
 
 ## 工作原理
 
@@ -13,6 +13,7 @@ Terminal 的完全磁盘访问权限因此可以传递给服务，避免直接�
 - macOS 13 或更高版本
 - 已安装 [Kimi Code CLI](https://www.kimi.com/code/docs/en/)
 - 系统自带的 Terminal、`/usr/bin/screen` 和 `/usr/bin/osascript`
+- 构建图形控制台需要 Xcode 或 Command Line Tools 提供的 Swift 工具链
 - 已有服务配置：`~/Library/Application Support/KimiWeb/com.kimi.web.plist`，其中包含 Kimi Web 的 `ProgramArguments`
 
 ## 授权 Terminal
@@ -35,9 +36,9 @@ Terminal 的完全磁盘访问权限因此可以传递给服务，避免直接�
 open -a "/Applications/Kimi Web.app"
 ```
 
-构建需要 macOS 自带的 Swift 工具链，不使用第三方依赖。产物为 `dist/Kimi Web.app`，bundle identifier 为 `com.kimi.web.console`；管理脚本和 Terminal 动作层均包含在 App 内，不依赖 iCloud 项目路径。重新安装只会替换控制台 App，不修改登录 LaunchAgent 或现有服务配置。
+构建不使用第三方依赖。产物为 `dist/Kimi Web.app`，bundle identifier 为 `com.kimi.web.console`；管理脚本和 Terminal 动作层均包含在 App 内，不依赖 iCloud 项目路径。重新安装只会替换控制台 App，不修改登录 LaunchAgent 或现有服务配置。
 
-控制台显示 screen、服务 PID、Kimi 版本和 Web 可达性，并提供启动、重启、停止、打开 Web、接回 Terminal 和更新按钮。打开 Web 使用 `http://127.0.0.1:58627/`；接回后按 `Control-A`，再按 `D` 脱离。
+控制台显示 screen、服务 PID、Kimi 版本和 Web 可达性，并提供启动、重启、停止、打开 Web、接回 Terminal 和更新按钮。主界面支持纵向滚动，较小窗口下也可访问全部功能。打开 Web 使用 `http://127.0.0.1:58627/`；接回后按 `Control-A`，再按 `D` 脱离。
 
 ### 命令编辑
 
