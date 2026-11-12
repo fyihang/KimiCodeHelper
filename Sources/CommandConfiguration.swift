@@ -5,6 +5,7 @@ enum CommandConfigurationError: Error, LocalizedError {
     case invalidPropertyList
     case missingProgramArguments
     case conflict
+    case coordinationFailed
 
     var errorDescription: String? {
         switch self {
@@ -14,6 +15,8 @@ enum CommandConfigurationError: Error, LocalizedError {
             return "配置文件中缺少有效的 ProgramArguments 字符串数组。"
         case .conflict:
             return "配置文件已被外部修改；未保存。请重新加载后再编辑。"
+        case .coordinationFailed:
+            return "无法协调配置文件写入；未保存。"
         }
     }
 }
@@ -39,23 +42,44 @@ struct CommandConfiguration: Sendable {
 
     func saving(programArguments arguments: [String]) throws -> CommandConfiguration {
         try CommandLine.validate(arguments)
-        let currentData = try Data(contentsOf: fileURL)
-        guard Self.digest(currentData) == originalDigest else {
-            throw CommandConfigurationError.conflict
+        var coordinationError: NSError?
+        var outcome: Result<CommandConfiguration, Error>?
+        NSFileCoordinator(filePresenter: nil).coordinate(
+            writingItemAt: fileURL,
+            options: .forReplacing,
+            error: &coordinationError
+        ) { coordinatedURL in
+            outcome = Result {
+                let currentData = try Data(contentsOf: coordinatedURL)
+                guard Self.digest(currentData) == originalDigest else {
+                    throw CommandConfigurationError.conflict
+                }
+                var dictionary = try Self.propertyListDictionary(from: currentData)
+                dictionary["ProgramArguments"] = arguments
+                let output = try PropertyListSerialization.data(fromPropertyList: dictionary, format: .xml, options: 0)
+                let temporaryURL = coordinatedURL.deletingLastPathComponent()
+                    .appendingPathComponent(".\(coordinatedURL.lastPathComponent).\(UUID().uuidString).tmp")
+                defer { try? FileManager.default.removeItem(at: temporaryURL) }
+                try output.write(to: temporaryURL)
+                let validated = try Self.propertyListDictionary(from: Data(contentsOf: temporaryURL))
+                guard validated["ProgramArguments"] as? [String] == arguments else {
+                    throw CommandConfigurationError.invalidPropertyList
+                }
+                _ = try FileManager.default.replaceItemAt(coordinatedURL, withItemAt: temporaryURL)
+                return CommandConfiguration(
+                    fileURL: coordinatedURL,
+                    programArguments: arguments,
+                    originalDigest: Self.digest(output)
+                )
+            }
         }
-        var dictionary = try Self.propertyListDictionary(from: currentData)
-        dictionary["ProgramArguments"] = arguments
-        let output = try PropertyListSerialization.data(fromPropertyList: dictionary, format: .xml, options: 0)
-        let temporaryURL = fileURL.deletingLastPathComponent()
-            .appendingPathComponent(".\(fileURL.lastPathComponent).\(UUID().uuidString).tmp")
-        defer { try? FileManager.default.removeItem(at: temporaryURL) }
-        try output.write(to: temporaryURL)
-        let validated = try Self.propertyListDictionary(from: Data(contentsOf: temporaryURL))
-        guard validated["ProgramArguments"] as? [String] == arguments else {
-            throw CommandConfigurationError.invalidPropertyList
+        if let coordinationError {
+            throw coordinationError
         }
-        _ = try FileManager.default.replaceItemAt(fileURL, withItemAt: temporaryURL)
-        return CommandConfiguration(fileURL: fileURL, programArguments: arguments, originalDigest: Self.digest(output))
+        guard let outcome else {
+            throw CommandConfigurationError.coordinationFailed
+        }
+        return try outcome.get()
     }
 
     private static func propertyListDictionary(from data: Data) throws -> [String: Any] {
